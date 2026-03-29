@@ -1,12 +1,8 @@
-from .bce import build_loss as build_bce
-from .dice import build_loss as build_dice
 from .bce_dice import build_loss as build_bce_dice
 import inspect
 
 def get_loss(loss_name, num_classes=1):
     all_losses = {
-        'bce': build_bce,
-        'dice': build_dice,
         'bce_dice' : build_bce_dice
     }
     
