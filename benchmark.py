@@ -176,7 +176,7 @@ def main():
                         choices=['floodkaggle', 'floodscene'])
     parser.add_argument('--model',        type=str,   required=True)
     parser.add_argument('--size',         type=int,   default=None)
-    parser.add_argument('--loss',         type=str,   default='bce')
+    parser.add_argument('--loss',         type=str,   default='bce_dice')
     parser.add_argument('--epochs',       type=int,   default=50)
     parser.add_argument('--batch_size',   type=int,   default=4)
     parser.add_argument('--lr',           type=float, default=0.001)

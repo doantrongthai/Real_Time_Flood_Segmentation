@@ -1,387 +1,207 @@
-# 🌊 Flood Segmentation Training Framework
+# FloodENet: A Lightweight ENet with Coordinate Attention for Real-Time Flood Segmentation
 
-Complete training pipeline for flood detection with **strict reproducibility** using PyTorch.
+> **APSIPA ASC 2026** — School of Electrical and Electronic Engineering, Hanoi University of Science and Technology
 
----
-
-## 📋 Table of Contents
-- [Datasets](#-datasets)
-- [Installation](#-installation)
-- [Quick Start](#-quick-start)
-- [Training Commands](#-training-commands)
-- [Multi-Seed Experiments](#-multi-seed-experiments)
-- [Project Structure](#-project-structure)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ---
 
-## 🗂️ Datasets
+## Overview
 
-### 1. **FloodVN** (Binary Segmentation)
-- **Classes**: 1 (flooded vs non-flooded)
-- **Loss**: `bce` (Binary Cross Entropy)
-- **Auto-download**: ✅ Yes
-- **Structure**:
-  ```
-  floodvn/
-  ├── train/
-  │   ├── images/
-  │   └── labels/  (JSON format)
-  ├── val/
-  └── test/
-  ```
+**FloodENet** is a lightweight semantic segmentation model designed for real-time flood area detection. Built upon the ENet backbone, FloodENet incorporates:
 
-### 2. **FloodKaggle** (Binary Segmentation)
-- **Classes**: 1 (flooded vs non-flooded)
-- **Loss**: `bce`
-- **Auto-download**: ✅ Yes
-- **Structure**: Same as FloodVN
+- **Improved Coordinate Attention (Imp. CA)** — a deeper shared bottleneck better suited to the irregular spatial extents of floodwater regions
+- **Depthwise Separable Convolutions (DWS)** — replacing standard 3×3 convolutions in Regular Bottlenecks to reduce model complexity (~9× MAC reduction)
+- **Dual-Path Downsampling (AP)** — combining max-pooling and average-pooling in the shortcut branch for complementary feature aggregation
 
-### 3. **FloodNet** (Multi-class Segmentation)
-- **Classes**: 10 (background, building-flooded, building-non-flooded, road-flooded, etc.)
-- **Loss**: `ce` (Cross Entropy)
-- **Auto-download**: ❌ Manual setup required
-- **Location**: `/content/drive/MyDrive/FloodNet/`
-- **Structure**:
-  ```
-  FloodNet/
-  ├── train/
-  │   ├── image/
-  │   └── mask/
-  ├── val/
-  │   ├── image/
-  │   └── mask/
-  └── test/
-      ├── image/
-      └── mask/
-  ```
+With only **0.25M parameters**, FloodENet achieves:
+
+| Dataset | IoU | DSC | Params (M) | FPS |
+|---|---|---|---|---|
+| Flood Area Segmentation (FAS) | **0.779 ± 0.003** | **0.876 ± 0.002** | **0.25** | 68.32 |
+| AIFloodSense (AIFSN) | **0.735 ± 0.007** | **0.848 ± 0.005** | **0.25** | 67.54 |
 
 ---
 
-## 🛠️ Installation
+## Architecture
 
-```bash
-# Clone repository
-git clone <your-repo>
-cd flood-segmentation
+```
+Encoder:
+  InitialBlock          →  16 × 128 × 128
+  Bottleneck 1.0 (down) →  64 × 64 × 64
+  4× Bottleneck 1.x     →  64 × 64 × 64
+  Bottleneck 2.0 (down) → 128 × 32 × 32
+  Bottleneck 2.1–2.8    → 128 × 32 × 32   (regular / dilated / asymmetric, DWS)
+  Repeat Section 2      → 128 × 32 × 32
 
-# Install dependencies
-pip install torch torchvision albumentations opencv-python tqdm gdown numpy pillow
-
-# For Google Colab
-!pip install -q gdown albumentations
+Decoder:
+  Imp. CA               → 128 × 32 × 32
+  Bottleneck 4.0 (up)   →  64 × 64 × 64
+  Bottleneck 4.1–4.2    →  64 × 64 × 64
+  Imp. CA               →  64 × 64 × 64
+  Bottleneck 5.0 (up)   →  16 × 128 × 128
+  Bottleneck 5.1        →  16 × 128 × 128
+  FullConv (transposed) →   C × 256 × 256
 ```
 
 ---
 
-## 🚀 Quick Start
-
-### **FloodVN** (Easiest - Auto Download)
+## Installation
 
 ```bash
-# Download dataset
-python main.py --dataset floodvn --download
-
-# Train
-python main.py \
-  --dataset floodvn \
-  --model unet \
-  --loss bce \
-  --epochs 50 \
-  --batch_size 4 \
-  --lr 0.001 \
-  --seed 42
+git clone https://github.com/doantrongthai/Real_Time_Flood_Segmentation
+cd Real_Time_Flood_Segmentation
+pip install -r requirements.txt
 ```
 
-### **FloodKaggle**
+**Requirements:**
+- Python ≥ 3.8
+- PyTorch ≥ 2.0
+- albumentations
+- opencv-python
+- gdown
+- tqdm
+
+---
+
+## Datasets
+
+### Flood Area Segmentation (FAS)
+290 aerial RGB images with binary pixel-wise masks. Split: 70% train / 15% val / 15% test.
+
+### AIFloodSense (AIFSN)
+376 training images + 94 test images. Non-flood classes are consolidated into a single background category for binary segmentation.
+
+Download datasets automatically:
 
 ```bash
-# Download dataset
-python main.py --dataset floodkaggle --download
+python main.py --model floodeNet --download --dataset floodkaggle
+python main.py --model floodeNet --download --dataset floodscene
+```
 
-# Train
+---
+
+## Training
+
+**Single run:**
+```bash
 python main.py \
+  --model floodeNet \
   --dataset floodkaggle \
-  --model unet \
-  --loss bce \
+  --loss bce_dice \
   --epochs 50 \
   --batch_size 4 \
   --lr 0.001 \
+  --size 256 \
   --seed 42
 ```
 
-### **FloodNet** (Multi-class)
-
+**Multi-seed experiment (recommended for paper results):**
 ```bash
-# NO auto-download - Manual setup required
-# 1. Upload FloodNet to: /content/drive/MyDrive/FloodNet/
-# 2. Ensure structure: train/image, train/mask, val/, test/
-
-# Train
 python main.py \
-  --dataset floodnet \
-  --model unet \
-  --loss ce \
+  --model floodeNet \
+  --dataset floodkaggle \
+  --loss bce_dice \
   --epochs 50 \
   --batch_size 4 \
-  --lr 0.001 \
-  --seed 42
-```
-
----
-
-## 📝 Training Commands
-
-### Basic Training
-
-```bash
-# FloodVN (binary)
-python main.py --dataset floodvn --model unet --epochs 50
-
-# FloodNet (multi-class) 
-python main.py --dataset floodnet --model unet --loss ce --epochs 50
-```
-
-### Advanced Options
-
-```bash
-python main.py \
-  --dataset floodvn \           # Dataset: floodvn, floodkaggle, floodnet
-  --model unet \                # Model architecture
-  --size 512 \                  # Input size (default: 256)
-  --loss bce \                  # Loss: bce (binary) or ce (multi-class)
-  --epochs 100 \                # Number of epochs
-  --batch_size 8 \              # Batch size
-  --lr 0.0001 \                 # Learning rate
-  --seed 42 \                   # Random seed
-  --output_path outputs/exp1    # Output directory
-```
-
----
-
-## 🔬 Multi-Seed Experiments (For Paper)
-
-Run experiments with **multiple seeds** to get mean ± std statistics:
-
-```bash
-# Default seeds: 42, 123, 456, 789, 2024
-python main.py \
-  --dataset floodvn \
-  --model unet \
   --multiseed \
-  --epochs 50
+  --seeds 42 123 456 789 2024
 ```
 
-**Custom seeds:**
+**Reproducibility check:**
 ```bash
 python main.py \
-  --dataset floodnet \
-  --model unet \
-  --loss ce \
-  --multiseed \
-  --seeds 42 100 200 300 400 \
-  --epochs 50
-```
-
-**Output:**
-```
-STATISTICS FOR PAPER
-════════════════════════════════════════
-Test Loss: 0.1234 ± 0.0056
-mIOU:      0.8765 ± 0.0123
-Val Loss:  0.1456 ± 0.0078
-════════════════════════════════════════
-
-LaTeX format:
-Test Loss: $0.1234 \pm 0.0056$
-mIOU: $0.8765 \pm 0.0123$
-
-📊 Results saved to: outputs/unet_floodvn_multiseed.json
+  --model floodeNet \
+  --dataset floodkaggle \
+  --loss bce_dice \
+  --verify_repro
 ```
 
 ---
 
-## 📊 Dataset-Specific Best Practices
+## Training Details
 
-### FloodVN & FloodKaggle
-
-| Parameter | Recommended Value | Note |
-|-----------|------------------|------|
-| `--loss` | `bce` | Binary segmentation |
-| `--size` | `256` or `512` | Higher = slower but better |
-| `--batch_size` | `4` or `8` | Depends on GPU |
-| `--lr` | `0.001` | Standard for Adam |
-| `--epochs` | `50-100` | Monitor val loss |
-
-**Example:**
-```bash
-python main.py --dataset floodvn --model unet --size 512 --epochs 100 --batch_size 8
-```
-
-### FloodNet (Multi-class)
-
-| Parameter | Recommended Value | Note |
-|-----------|------------------|------|
-| `--loss` | `ce` | **MUST use CrossEntropy** |
-| `--size` | `256` or `512` | 10 classes = more memory |
-| `--batch_size` | `4` | Lower due to 10 classes |
-| `--lr` | `0.0001` | Lower for stability |
-| `--epochs` | `50-100` | Multi-class needs more |
-
-**Example:**
-```bash
-python main.py --dataset floodnet --model unet --loss ce --size 512 --epochs 100 --batch_size 4 --lr 0.0001
-```
+| Setting | Value |
+|---|---|
+| GPU | NVIDIA T4 (15 GB) |
+| Epochs | 50 |
+| Batch size | 4 |
+| Optimizer | Adam (β₁=0.9, β₂=0.999) |
+| Initial LR | 1e-3 |
+| LR schedule | Cosine Annealing → 1e-6 |
+| Loss | 0.5 × BCE + 0.5 × Dice |
+| Input size | 256 × 256 |
+| Augmentation | HorizontalFlip, VerticalFlip, RandomBrightnessContrast, ShiftScaleRotate |
+| Evaluation | 5 seeds: 42, 123, 456, 789, 2024 |
 
 ---
 
-## 📁 Project Structure
+## Results
+
+Results are reported as **mean ± std** over 5 independent runs.
+
+### Comparison with baselines (FAS dataset)
+
+| Model | IoU | DSC | Params (M) | FPS |
+|---|---|---|---|---|
+| SegNet | 0.713 ± 0.013 | 0.833 ± 0.009 | 29.48 | 50.26 |
+| U-Net | 0.757 ± 0.006 | 0.862 ± 0.004 | 31.04 | 26.57 |
+| ESPNetv2 | 0.760 ± 0.005 | 0.864 ± 0.003 | 0.84 | **126.39** |
+| SegFormer | 0.766 ± 0.015 | 0.867 ± 0.010 | 24.72 | 35.67 |
+| ENet | 0.773 ± 0.005 | 0.872 ± 0.003 | 0.37 | 80.84 |
+| **FloodENet (Ours)** | **0.779 ± 0.003** | **0.876 ± 0.002** | **0.25** | 68.32 |
+
+### Ablation study
+
+| Base | AP | DWS | CA | Imp. CA | Params (M) | AIFSN IoU | FAS IoU |
+|---|---|---|---|---|---|---|---|
+| ✓ | | | | | 0.37 | 0.725 | 0.773 |
+| ✓ | ✓ | | | | 0.37 | 0.728 | 0.771 |
+| ✓ | | ✓ | | | 0.23 | 0.714 | 0.776 |
+| ✓ | ✓ | ✓ | ✓ | | 0.23 | **0.735** | 0.777 |
+| ✓ | ✓ | ✓ | | ✓ | 0.25 | **0.735** | **0.779** |
+
+---
+
+## Project Structure
 
 ```
-flood-segmentation/
-├── main.py                    # Main entry point
+Real_Time_Flood_Segmentation/
 ├── models/
-│   ├── __init__.py           # get_model()
-│   ├── unet.py               # U-Net architecture
-│   └── ...                   # Other models
-├── losses/
-│   ├── __init__.py           # get_loss()
-│   └── ...                   # Loss functions
+│   ├── __init__.py
+│   └── floodeNet.py          # FloodENet architecture
 ├── utils/
-│   ├── dataloader.py         # Dataset & DataLoader
 │   ├── trainer.py            # Training loop
-│   └── metrics.py            # mIOU, Dice, Accuracy
-├── outputs/                  # Saved models & results
-│   ├── unet_bce_floodvn_s42.pth
-│   └── unet_floodvn_multiseed.json
-├── floodvn/                  # Auto-downloaded
-├── floodkaggle/              # Auto-downloaded
-└── README.md                 # This file
+│   ├── dataloader.py         # Dataset & DataLoader
+│   └── metrics.py            # IoU, Dice, FPS, GFLOPs
+├── losses/
+│   ├── __init__.py
+│   └── bce_dice.py           # BCE + Dice combined loss
+├── main.py                   # Entry point
+└── README.md
 ```
 
 ---
 
-## 🎯 Complete Training Pipeline
-
-### 1. Train on FloodVN
-```bash
-# Download dataset
-python main.py --dataset floodvn --download
-
-# Single seed training
-python main.py --dataset floodvn --model unet --epochs 50 --seed 42
-
-# Multi-seed for paper
-python main.py --dataset floodvn --model unet --multiseed --epochs 50
-```
-
-### 2. Train on FloodKaggle
-```bash
-python main.py --dataset floodkaggle --download
-python main.py --dataset floodkaggle --model unet --multiseed --epochs 50
-```
-
-### 3. Train on FloodNet
-```bash
-# Manual setup: Upload to /content/drive/MyDrive/FloodNet/
-
-# Single seed
-python main.py --dataset floodnet --model unet --loss ce --epochs 50 --seed 42
-
-# Multi-seed
-python main.py --dataset floodnet --model unet --loss ce --multiseed --epochs 50
-```
-
----
-
-## 🔧 Troubleshooting
-
-### FloodNet not found
-```
-FileNotFoundError: FloodNet not found at /content/drive/MyDrive/FloodNet
-```
-**Solution:** Manually upload FloodNet folder to Google Drive at exactly this path.
-
-### CUDA out of memory
-```
-RuntimeError: CUDA out of memory
-```
-**Solution:** Reduce batch size: `--batch_size 2`
-
-### Wrong loss function
-```
-ValueError: num_classes=10 but using bce loss
-```
-**Solution:** Use `--loss ce` for FloodNet (multi-class)
-
----
-
-## 📈 Results Format
-
-**Single training output:**
-```
-════════════════════════════════════════
-FINAL RESULTS
-════════════════════════════════════════
-Test Loss:     0.1234567890
-mIOU:          0.8765432100
-Best Val Loss: 0.1456789000
-Saved:         outputs/unet_bce_floodvn_s42.pth
-════════════════════════════════════════
-```
-
-**Multi-seed JSON output:**
-```json
-{
-  "config": {
-    "model": "unet",
-    "dataset": "floodvn",
-    "loss": "bce",
-    "epochs": 50
-  },
-  "seeds": [42, 123, 456, 789, 2024],
-  "results": [
-    {"seed": 42, "test_loss": 0.123, "miou": 0.876},
-    ...
-  ],
-  "statistics": {
-    "test_loss": {"mean": 0.1234, "std": 0.0056},
-    "miou": {"mean": 0.8765, "std": 0.0123}
-  }
-}
-```
-
----
-
-## ✅ Reproducibility Features
-
-This framework ensures **strict reproducibility**:
-
-- ✅ Fixed seeds for all RNGs (Python, NumPy, PyTorch, CUDA)
-- ✅ Deterministic CUDA operations (`torch.use_deterministic_algorithms(True)`)
-- ✅ Disabled cuDNN benchmark and TF32
-- ✅ Per-sample deterministic augmentation
-- ✅ Fixed DataLoader worker seeds
-- ✅ Saved RNG states in checkpoints
-
-**Note:** `num_workers=4` for speed. Use `num_workers=0` for 100% reproducibility if needed.
-
----
-
-## 📚 Citation
-
-If you use this framework, please cite:
+## Citation
 
 ```bibtex
-@misc{flood-segmentation,
-  title={Flood Segmentation Training Framework},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/yourrepo}
+@inproceedings{vu2026floodeNet,
+  title     = {FloodENet: A Lightweight ENet with Coordinate Attention for Real-Time Flood Segmentation},
+  author    = {Vu, Tuan Anh and Doan, Trong Thai and Dao, Duc Thinh and
+               Nguyen, Thi Lan Huong and Nguyen, Tuan Ninh and Nguyen, Thi Hue and
+               Nguyen, Hoang Nam and Nguyen, Duc Thuan and Hoang, Si Hong and
+               Hoang, Manh Cuong},
+  booktitle = {2026 Asia Pacific Signal and Information Processing Association
+               Annual Summit and Conference (APSIPA ASC)},
+  year      = {2026}
 }
 ```
 
 ---
 
-## 📧 Contact
+## Acknowledgment
 
-For issues or questions, open an issue on GitHub or contact: your.email@example.com
+This work was supported by the LIDP Laboratory, Hanoi University of Science and Technology.
